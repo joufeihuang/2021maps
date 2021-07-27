@@ -1,0 +1,265 @@
+---
+title: "2018台灣縣市長選舉地圖 and 電動車"
+author: "Jou Fei Huang"
+date: "2021/8/3"
+output: 
+  html_document: 
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+
+```{r setup, include=FALSE}
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr) 
+    wd <- ifelse(basename(getwd())=="scripts", 
+       gsub("/scripts", "", getwd()), 
+       getwd()) 
+    opts_knit$set(root.dir=wd) 
+```
+
+# Self introduction
+[Personal Website](https://joufeihuang.weebly.com/)
+[My research journey](https://doucelinehuang34.blogspot.com/)
+
+## needed packages
+*ggplot2: data visualization  
+*sf: for reading and processing spatial data  
+*tmap: map  
+*tmaptools: for reading and processing spatial data  
+*leaflet:  for interactive maps  
+*dplyr: for data mutation  
+*tidyverse: for a lot of necessarily packages for everyday data analyses  
+
+sf, tmap are different mapping packages for the same purpose.  
+Personally, I like tmap more.  
+
+```{r,include=FALSE}
+
+install.packages("ggplot2") #data visualization
+install.packages("sf") #for reading and processing spatial data
+install.packages("tmap") #map
+install.packages("tmaptools") #for reading and processing spatial data
+install.packages("leaflet") # for interactive maps
+install.packages("dplyr") #for data mutation
+install.packages("tidyverse") #for a lot of necessarily packages for everyday data analyses
+#install.packages("htmlwidgets")
+#install.packages("mapview")
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(tmap)
+library(tmaptools)
+library(leaflet)
+library(dplyr)
+library(htmlwidgets) #save generated graphs into html
+library(mapview)
+
+```
+
+## basic concepts
+
+```{r}
+leaflet()%>%addTiles()
+```
+
+## import coordinates
+
+```{r}
+setwd("C:/Users/wenra/Downloads")
+moto<-readr::read_csv("C:/Users/wenra/Downloads/中油_電動機車充電站.csv")
+leaflet()%>%addTiles()%>%
+  addCircleMarkers(data=moto,lat=~緯度, lng=~經度,radius=~3)
+
+```
+
+## pop-up information
+
+```{r}
+names(moto)
+moto<-moto%>%mutate(popup_info=paste("站名: ",站名,"<br/>",
+                           "電話: ", 電話,"<br/>",
+                           "提供服務時段: ", 提供服務時段))
+
+motomap<-leaflet()%>%addTiles()%>%addCircleMarkers(data=moto,lat=~緯度, lng=~經度,radius=~3,popup = ~popup_info)
+```
+
+## save a map
+
+```{r}
+mapshot(motomap, url = "moto.html")
+```
+
+
+## import data
+
+step 1. Search for shp file.  
+
+
+[Taiwan county map](https://data.moi.gov.tw/MoiOD/Data/DataDetail.aspx?oid=141718DF-0213-48C3-A7F7-AD6222B1D1F2)
+
+Or you can check if any R packages contains map information.  
+
+  1) world:  rnaturalearth  
+  
+  2) USA: usmap  
+
+step 2. what do you want to see?
+
+I want to see if DPP won more votes in Southern counties than the KMT.
+
+[Central Election Commission](https://db.cec.gov.tw/)
+
+[主計處 縣市重要統計指標](https://statdb.dgbas.gov.tw/pxweb/Dialog/statfile9.asp)
+
+step 3. check they have a common variable to merge
+
+1) 縣市名稱的寫法是否相同 ex: 台北or 台北市  
+
+2) 變數名稱是否相同 ex: countyname or 縣市名稱-->str()  
+
+step 4. merge datasets
+
+```{r,results="hide"}
+setwd("C:/Users/wenra/Box Sync/map_taiwan")
+taiwan <- st_read("C:/Users/wenra/Box Sync/map_taiwan/COUNTY_MOI_1090820.shp", quiet = TRUE)
+str(taiwan) 
+taiwan<-st_as_sf(taiwan)
+countyvote<-readr::read_csv("C:/Users/wenra/Box Sync/map_taiwan/2018_county_mayor_election.csv")
+#clean the data
+
+dt_partyvote<-countyvote %>%
+  group_by(COUNTYNAME, party) %>%
+  summarize(party_vote = vote_ratio)
+
+DPP<-subset(dt_partyvote,party%in%c("民主進步黨"))
+KMT<-subset(dt_partyvote,party%in%c("中國國民黨"))
+
+#shp file is always left. 
+map_DPP<-inner_join(taiwan, DPP)
+map_KMT<-inner_join(taiwan, KMT)
+names(map_DPP)[names(map_DPP) == "party_vote"] <-"DPP_vote_ratio" 
+names(map_KMT)[names(map_KMT) == "party_vote"] <-"KMT_vote_ratio" 
+party2018<-cbind(map_DPP,map_KMT)
+class(map_DPP)
+str(map_DPP)
+```
+
+## draw maps using tmap
+
+*polygons: a closed plane figure bounded by straight lines  
+
+This means the 行政區 in this file.  
+
+```{r}
+
+
+tm_shape(map_DPP) +
+  tm_polygons(col = "COUNTYNAME")+
+  tm_layout(legend.outside = TRUE) 
+
+tm_shape(map_DPP) +
+  tm_polygons(col = "DPP_vote_ratio",
+              legend.hist = TRUE) +
+  tm_layout(legend.outside = TRUE) 
+
+tm_shape(map_KMT) +
+  tm_polygons(col = "COUNTYNAME")+
+  tm_layout(legend.outside = TRUE) 
+
+tm_shape(map_KMT) +
+  tm_polygons(col = "KMT_vote_ratio",
+              legend.hist = TRUE) +
+  tm_layout(legend.outside = TRUE) 
+
+tm_shape(party2018) +
+  tm_polygons(col = "KMT_vote_ratio",
+              legend.hist = TRUE) +
+  tm_layout(legend.outside = TRUE) 
+
+
+```
+
+
+## draw the map using ggplots
+We can also use ggplot to draw a map.  
+1)ggplot: dataset  
+2)aes: the size of our picture
+When we paint, we need to decide which kind of paper, color, size of the paper, the layout, and aes helps us define these parameters.  
+
+note:   
+
+a)aes(geometry = geometry -->so we can make sure that R treats "map_DPP" as spatial data form  
+
+b)coord_sf(): not necessary, but if we want Taiwan to be in the center of the map  
+
+```{r}
+
+ggplot(map_DPP)+
+  geom_sf(aes(geometry = geometry, fill=DPP_vote_ratio))+
+  coord_sf(xlim = c(115, 125), ylim = c(20, 30), expand = FALSE)
+
+
+ggplot(map_KMT)+
+  geom_sf(aes(geometry = geometry, fill=KMT_vote_ratio))+
+  coord_sf(xlim = c(115, 125), ylim = c(20, 30), expand = FALSE)
+
+```
+
+## styles
+
+jenks: identifies groups of similar values in the data   and maximizes the differences between categories.
+
+For more kinds of styles:  
+https://geocompr.github.io/post/2019/tmap-color-scales/#fn2
+
+style = "pretty", the default setting, rounds breaks into whole numbers where possible and spaces them evenly;  
+
+style = "equal" divides input values into bins of equal range and is appropriate for variables with a uniform distribution (not recommended for variables with a skewed distribution as the resulting map may end-up having little color diversity);  
+
+style = "quantile" ensures the same number of observations fall into each category (with the potential downside that bin ranges can vary widely);  
+
+style = "jenks" identifies groups of similar values in the data and maximizes the differences between categories;  
+
+style = "cont" (and "order") present a large number of colors over continuous color fields and are particularly suited for continuous rasters ("order" can help visualize skewed distributions);  
+
+style = "cat" was designed to represent categorical values and assures that each category receives a unique color.  
+
+```{r}
+party2018
+```
+
+```{r}
+countyvote$name
+elected<-subset(countyvote,elected==1)
+partyelection<- left_join(party2018, elected, by= "COUNTYNAME")
+partyelection      
+
+```
+```{r}
+view(partyelection)
+```
+
+
+
+## create interactive map 
+```{r}
+
+map<-st_as_sf(partyelection)
+tm_shape(partyelection)+
+  tm_polygons("KMT_vote_ratio",id="COUNTYNAME",palette="Blues",
+              popup.vars=c(
+                    "2018縣市長國民黨的得票率: "="KMT_vote_ratio",
+                    "當選縣市長: " = "name",
+                    "當選縣市長的政黨別:"="party.y",
+                    "當選者的得票數:"="vote_share")  
+                )
+tmap_mode("view")
+kmt_2018_countyelection<-tmap_last()
+tmap_save(kmt_2018_countyelection,"kmt_2018_countyelection.html")
+
+```
+
